@@ -46,7 +46,15 @@ import {
   WarningAmber
 } from '@mui/icons-material'
 import { diffScript, useContinuityStore } from './store'
-import type { RevisionColor, Scene, WarningItem, WarningStatus } from './types'
+import type { RevisionColor, Scene, WarningItem, WarningStatus, WarningType } from './types'
+
+const warningTypeLabels: Record<WarningType, string> = {
+  character: '人物',
+  prop: '道具',
+  wardrobe: '服装',
+  timeline: '时间线',
+  overlap: '撞期'
+}
 
 const revisionOptions: Array<{ value: RevisionColor; label: string; color: string }> = [
   { value: 'white', label: '白纸', color: '#f7f5ee' },
@@ -204,7 +212,7 @@ export default function App() {
 
   function renderSceneDetail() {
     if (!selectedScene) return null
-    const sceneWarnings = warnings.filter((warning) => warning.sceneId === selectedScene.id)
+    const sceneWarnings = warnings.filter((warning) => warning.sceneId === selectedScene.id || warning.relatedSceneId === selectedScene.id)
     const locked = selectedScene.status === 'locked'
     return (
       <Box className="detail-page">
@@ -345,6 +353,7 @@ export default function App() {
           {visibleWarnings.map((warning) => {
             const review = state.reviews[warning.id] ?? { status: 'pending' as WarningStatus, replies: [] }
             const scene = state.script.scenes.find((item) => item.id === warning.sceneId)
+            const relatedScene = warning.relatedSceneId ? state.script.scenes.find((item) => item.id === warning.relatedSceneId) : undefined
             return (
               <Paper
                 key={warning.id}
@@ -358,8 +367,22 @@ export default function App() {
                   <Box flex={1}>
                     <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
                       <Typography variant="h6">{warning.title}</Typography>
-                      <Chip size="small" label={`场景 ${scene?.number ?? '-'}`} onClick={() => openScene(warning.sceneId)} />
-                      <Chip size="small" variant="outlined" label={warning.type === 'character' ? '人物' : warning.type === 'prop' ? '道具' : warning.type === 'wardrobe' ? '服装' : '时间线'} />
+                      <Chip
+                        size="small"
+                        label={relatedScene ? `场景 ${scene?.number ?? '-'} · ${scene?.location || '未填写地点'}` : `场景 ${scene?.number ?? '-'}`}
+                        onClick={() => openScene(warning.sceneId)}
+                      />
+                      {relatedScene && (
+                        <>
+                          <span className="warning-link-sep">↔</span>
+                          <Chip
+                            size="small"
+                            label={`场景 ${relatedScene.number} · ${relatedScene.location || '未填写地点'}`}
+                            onClick={() => openScene(relatedScene.id)}
+                          />
+                        </>
+                      )}
+                      <Chip size="small" variant="outlined" label={warningTypeLabels[warning.type]} />
                     </Stack>
                     <Typography mt={1}>{warning.detail}</Typography>
                     <Typography variant="body2" color="text.secondary" mt={.5}>建议：{warning.suggestion}</Typography>

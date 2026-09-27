@@ -37,6 +37,10 @@ export const sampleScript: Script = {
     {
       id: 'scene-4', number: '4', slug: '灯塔·黎明', synopsis: '乔叔交出铜钥匙，苏遥确认录音经过剪辑。', intExt: 'EXT', location: '北岬灯塔', dayNight: '清晨', storyTime: '第 2 天 05:30', pageLength: 3.5,
       characterIds: ['char-lin', 'char-su', 'char-qiao'], propIds: ['prop-key', 'prop-recorder'], costumes: { 'char-lin': 'ward-lin-shirt', 'char-su': 'ward-su-coat', 'char-qiao': 'ward-qiao-raincoat' }, revision: 'yellow', status: 'review', reason: '呈现人物做最终决定的动作，而非对白解释。'
+    },
+    {
+      id: 'scene-5', number: '5', slug: '医院·来电', synopsis: '林默守在病房外，电话里再次响起兄长的声音。', intExt: 'INT', location: '镇医院走廊', dayNight: '夜', storyTime: '第 2 天 10:10', pageLength: 1.25,
+      characterIds: ['char-lin'], propIds: ['prop-recorder'], costumes: { 'char-lin': 'ward-lin-jacket' }, revision: 'green', status: 'draft', reason: '新增医院线，计划与售票厅戏份交叉剪辑。'
     }
   ]
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { sampleScript } from './sample'
+import { formatStoryMoment, isSameMoment, parseStoryMoment } from './storyTime'
 import type { Character, ContinuityState, DiffItem, Prop, Reply, Scene, Script, Version, Wardrobe, WarningItem, WarningReview } from './types'
 
 const STORAGE_KEY = 'sologsb-1017-continuity-v1'
@@ -96,6 +97,65 @@ export function deriveWarnings(script: Script): WarningItem[] {
       }
     }
   })
+  warnings.push(...deriveOverlapWarnings(script))
+  return warnings
+}
+
+// 撞期检查：同一角色或道具被排到同一时刻的两个地点。
+// 故事时间为空或写法认不出来的场次直接跳过，不影响其他检查；
+// 同一地点（写法归一后相同）视为连着拍，不算问题。
+function deriveOverlapWarnings(script: Script): WarningItem[] {
+  const warnings: WarningItem[] = []
+  const moments = script.scenes.map((scene) => parseStoryMoment(scene.storyTime))
+  const locationKey = (location: string) => location.trim().replace(/\s+/g, '').toLowerCase()
+  const locationLabel = (location: string) => location.trim() || '未填写地点'
+
+  for (let i = 0; i < script.scenes.length; i++) {
+    const momentA = moments[i]
+    if (!momentA || momentA.minutes === null) continue
+    for (let j = i + 1; j < script.scenes.length; j++) {
+      const momentB = moments[j]
+      if (!momentB || momentB.minutes === null) continue
+      if (!isSameMoment(momentA, momentB)) continue
+      const a = script.scenes[i]
+      const b = script.scenes[j]
+      if (locationKey(a.location) === locationKey(b.location)) continue
+
+      const where = `场景 ${a.number}（${locationLabel(a.location)}）与场景 ${b.number}（${locationLabel(b.location)}）故事时间同为${formatStoryMoment(momentA)}`
+      const sharedCharacters = a.characterIds.filter((characterId) => b.characterIds.includes(characterId))
+      const sharedProps = a.propIds.filter((propId) => b.propIds.includes(propId))
+
+      sharedCharacters.forEach((characterId) => {
+        const character = script.characters.find((item) => item.id === characterId)
+        if (!character) return
+        warnings.push({
+          id: `overlap-character-${a.id}-${b.id}-${characterId}`,
+          type: 'overlap',
+          severity: 'error',
+          sceneId: a.id,
+          relatedSceneId: b.id,
+          title: `${character.name}同一时刻被排到两处`,
+          detail: `${where}，${character.name}无法同时出现在两个地点。`,
+          suggestion: '调整其中一场的故事时间或出场安排；若实为同一地点连着拍，请统一两场的地点写法。'
+        })
+      })
+
+      sharedProps.forEach((propId) => {
+        const prop = script.props.find((item) => item.id === propId)
+        if (!prop) return
+        warnings.push({
+          id: `overlap-prop-${a.id}-${b.id}-${propId}`,
+          type: 'overlap',
+          severity: 'error',
+          sceneId: a.id,
+          relatedSceneId: b.id,
+          title: `${prop.name}同一时刻出现在两处`,
+          detail: `${where}，道具“${prop.name}”无法同时出现在两个地点。`,
+          suggestion: '调整其中一场的故事时间或道具归属；若实为同一地点连着拍，请统一两场的地点写法。'
+        })
+      })
+    }
+  }
   return warnings
 }
 
