@@ -6,6 +6,70 @@ const STORAGE_KEY = 'sologsb-1017-continuity-v1'
 const clone = <T,>(value: T): T => structuredClone(value)
 const id = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
 
+/** 故事时间归一化后的可比时刻：第几天 + 当天时分。任一项认不出来就无法参与比对。 */
+export interface StoryMoment {
+  day: number
+  minutes: number
+}
+
+const chineseDigits: Record<string, number> = {
+  零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9
+}
+
+/** 解析“一/二/三”“十一/二十/三十一”这类汉字数字，认不出来返回 null。 */
+function parseChineseNumber(text: string): number | null {
+  if (!text) return null
+  if (/^\d+$/.test(text)) return Number(text)
+  let result = 0
+  let current = 0
+  let matched = false
+  for (const char of text) {
+    if (char === '十') {
+      matched = true
+      result += (current || 1) * 10
+      current = 0
+    } else if (char in chineseDigits) {
+      matched = true
+      current = chineseDigits[char]
+    } else {
+      return null
+    }
+  }
+  return matched ? result + current : null
+}
+
+/**
+ * 把“第 1 天 22:40”“第三天 清晨 6:30”“第2日 18：05”之类写法整理成可比对的时刻。
+ * 时间没填、只写了天没写钟点、或写法认不出来时返回 null，调用方应跳过该场。
+ */
+export function parseStoryMoment(raw: string): StoryMoment | null {
+  if (!raw || !raw.trim()) return null
+  const text = raw.replace(/　/g, ' ')
+
+  const dayMatch = text.match(/第\s*([0-9]+|[零〇一二两三四五六七八九十]+)\s*(天|日)/)
+  if (!dayMatch) return null
+  const day = parseChineseNumber(dayMatch[1])
+  if (day === null || day < 0) return null
+
+  const clockMatch = text.match(/(?<![0-9])([01]?\d|2[0-3])\s*[:：点時时]\s*([0-5]?\d)(?:\s*分)?/)
+  if (!clockMatch) return null
+  const hour = Number(clockMatch[1])
+  const minute = Number(clockMatch[2])
+  if (Number.isNaN(hour) || Number.isNaN(minute) || hour > 23 || minute > 59) return null
+
+  return { day, minutes: hour * 60 + minute }
+}
+
+const momentKey = (moment: StoryMoment) => `${moment.day}:${moment.minutes}`
+
+const formatMoment = (moment: StoryMoment) => {
+  const hour = Math.floor(moment.minutes / 60)
+  const minute = moment.minutes % 60
+  return `第 ${moment.day} 天 ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+}
+
+const normalizeLocation = (location: string) => location.replace(/\s+/g, ' ').trim()
+
 function initialState(): ContinuityState {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -96,6 +160,60 @@ export function deriveWarnings(script: Script): WarningItem[] {
       }
     }
   })
+
+  // 同一角色或道具在同一故事时刻被排进两场、且地点不同，就报分身两处；同一地点连着拍不报。
+  // 故事时间没填或写法认不出来的场次直接跳过，不影响其他检查照常报出。
+  const timedScenes = script.scenes
+    .map((scene, index) => ({ scene, index, moment: parseStoryMoment(scene.storyTime), location: normalizeLocation(scene.location) }))
+    .filter((entry) => entry.moment && entry.location)
+  const momentGroups = new Map<string, typeof timedScenes>()
+  timedScenes.forEach((entry) => {
+    const key = momentKey(entry.moment as StoryMoment)
+    momentGroups.set(key, [...(momentGroups.get(key) ?? []), entry])
+  })
+
+  momentGroups.forEach((entries) => {
+    if (entries.length < 2) return
+    for (let left = 0; left < entries.length; left += 1) {
+      for (let right = left + 1; right < entries.length; right += 1) {
+        const a = entries[left]
+        const b = entries[right]
+        if (a.location === b.location) continue
+        const moment = a.moment as StoryMoment
+        const sharedCharacterIds = [...new Set(a.scene.characterIds)].filter((characterId) => b.scene.characterIds.includes(characterId))
+        sharedCharacterIds.forEach((characterId) => {
+          const character = script.characters.find((item) => item.id === characterId)
+          if (!character) return
+          warnings.push({
+            id: `place-character-${characterId}-${a.scene.id}-${b.scene.id}`,
+            type: 'place',
+            severity: 'error',
+            sceneId: a.scene.id,
+            relatedSceneId: b.scene.id,
+            title: `${character.name}同一时刻出现在两处`,
+            detail: `故事时间同为${formatMoment(moment)}：场景 ${a.scene.number}（${a.scene.intExt}. ${a.location}）与场景 ${b.scene.number}（${b.scene.intExt}. ${b.location}）都安排了${character.name}出场，两处地点不同，演员分身乏术。`,
+            suggestion: '错开两场的故事时间，或只保留其中一场的出场安排；若两场实为同一地点连戏，请把地点名称统一。'
+          })
+        })
+        const sharedPropIds = [...new Set(a.scene.propIds)].filter((propId) => b.scene.propIds.includes(propId))
+        sharedPropIds.forEach((propId) => {
+          const prop = script.props.find((item) => item.id === propId)
+          if (!prop) return
+          warnings.push({
+            id: `place-prop-${propId}-${a.scene.id}-${b.scene.id}`,
+            type: 'place',
+            severity: 'error',
+            sceneId: a.scene.id,
+            relatedSceneId: b.scene.id,
+            title: `${prop.name}同一时刻出现在两处`,
+            detail: `故事时间同为${formatMoment(moment)}：道具“${prop.name}”同时出现在场景 ${a.scene.number}（${a.scene.intExt}. ${a.location}）与场景 ${b.scene.number}（${b.scene.intExt}. ${b.location}），两处地点不同，道具不可能同时在两地。`,
+            suggestion: '错开两场的故事时间，或只在其中一场安排该道具；若两场实为同一地点连戏，请把地点名称统一。'
+          })
+        })
+      }
+    }
+  })
+
   return warnings
 }
 

@@ -204,7 +204,7 @@ export default function App() {
 
   function renderSceneDetail() {
     if (!selectedScene) return null
-    const sceneWarnings = warnings.filter((warning) => warning.sceneId === selectedScene.id)
+    const sceneWarnings = warnings.filter((warning) => warning.sceneId === selectedScene.id || warning.relatedSceneId === selectedScene.id)
     const locked = selectedScene.status === 'locked'
     return (
       <Box className="detail-page">
@@ -345,6 +345,16 @@ export default function App() {
           {visibleWarnings.map((warning) => {
             const review = state.reviews[warning.id] ?? { status: 'pending' as WarningStatus, replies: [] }
             const scene = state.script.scenes.find((item) => item.id === warning.sceneId)
+            const relatedScene = warning.relatedSceneId ? state.script.scenes.find((item) => item.id === warning.relatedSceneId) : undefined
+            const typeLabel = warning.type === 'character'
+              ? '人物'
+              : warning.type === 'prop'
+                ? '道具'
+                : warning.type === 'wardrobe'
+                  ? '服装'
+                  : warning.type === 'place'
+                    ? '同时两处'
+                    : '时间线'
             return (
               <Paper
                 key={warning.id}
@@ -358,8 +368,9 @@ export default function App() {
                   <Box flex={1}>
                     <Stack direction="row" gap={1} alignItems="center" flexWrap="wrap">
                       <Typography variant="h6">{warning.title}</Typography>
-                      <Chip size="small" label={`场景 ${scene?.number ?? '-'}`} onClick={() => openScene(warning.sceneId)} />
-                      <Chip size="small" variant="outlined" label={warning.type === 'character' ? '人物' : warning.type === 'prop' ? '道具' : warning.type === 'wardrobe' ? '服装' : '时间线'} />
+                      <Chip size="small" label={`场景 ${scene?.number ?? '-'}`} clickable onClick={() => openScene(warning.sceneId)} />
+                      {relatedScene && <Chip size="small" color="secondary" variant="outlined" label={`场景 ${relatedScene.number}`} clickable onClick={() => relatedScene && openScene(relatedScene.id)} />}
+                      <Chip size="small" variant="outlined" label={typeLabel} />
                     </Stack>
                     <Typography mt={1}>{warning.detail}</Typography>
                     <Typography variant="body2" color="text.secondary" mt={.5}>建议：{warning.suggestion}</Typography>
@@ -369,7 +380,8 @@ export default function App() {
                 <Stack direction="row" gap={1} mt={1.5} flexWrap="wrap">
                   <Button size="small" variant={review.status === 'accepted' ? 'contained' : 'outlined'} startIcon={<CheckCircle />} onClick={() => store.setReviewStatus(warning.id, 'accepted')}>接受问题</Button>
                   <Button size="small" variant={review.status === 'ignored' ? 'contained' : 'outlined'} color="inherit" startIcon={<Block />} onClick={() => store.setReviewStatus(warning.id, 'ignored')}>忽略警告</Button>
-                  <Button size="small" onClick={() => openScene(warning.sceneId)}>打开场景</Button>
+                  <Button size="small" onClick={() => openScene(warning.sceneId)}>打开场景 {scene?.number ?? ''}</Button>
+                  {relatedScene && <Button size="small" onClick={() => openScene(relatedScene.id)}>打开场景 {relatedScene.number}</Button>}
                 </Stack>
                 {review.replies.length > 0 && (
                   <Box className="reply-list">

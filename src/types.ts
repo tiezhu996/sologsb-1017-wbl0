@@ -1,6 +1,6 @@
 export type RevisionColor = 'white' | 'blue' | 'pink' | 'yellow' | 'green' | 'goldenrod' | 'buff' | 'salmon' | 'cherry'
 export type WarningStatus = 'pending' | 'accepted' | 'ignored'
-export type WarningType = 'character' | 'prop' | 'wardrobe' | 'timeline'
+export type WarningType = 'character' | 'prop' | 'wardrobe' | 'timeline' | 'place'
 
 export interface Character {
   id: string
@@ -59,6 +59,8 @@ export interface WarningItem {
   type: WarningType
   severity: 'error' | 'warning'
   sceneId: string
+  /** 涉及两场的问题（如同一时刻分身两处）用这里指向另一场。 */
+  relatedSceneId?: string
   title: string
   detail: string
   suggestion: string
